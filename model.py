@@ -1,4 +1,3 @@
-
 import math
 import torch
 import torch.nn as nn
@@ -16,8 +15,6 @@ def calculate_error(x, y, eps=1e-8):
 
 
 class BioLayer(nn.Module):
-
-
     def __init__(self, in_dim, out_dim, rank=16, mix_factor=0.05,
                  smoothing_factor=0.1, bias=True):
         super().__init__()
@@ -52,7 +49,6 @@ class BioLayer(nn.Module):
 
     @torch.no_grad()
     def local_update(self, y, lr_w=1e-3, lr_lr=1e-3):
-
         if y.ndim == 1:
             y = y.unsqueeze(0)
         y_pred = self.y_pred if self.y_pred.ndim > 1 else self.y_pred.unsqueeze(0)
@@ -85,9 +81,7 @@ class BioLayer(nn.Module):
 
 
 class ExternalMemory(nn.Module):
-
-
-    def __init__(self, dim, num_slots=512, write_lr=0.1, decay=0.995):
+    def __init__(self, dim, num_slots=128, write_lr=0.1, decay=0.995):
         super().__init__()
         self.dim = dim
         self.num_slots = num_slots
@@ -102,19 +96,20 @@ class ExternalMemory(nn.Module):
         self.out_proj = nn.Linear(dim, dim, bias=False)
 
     def read(self, x):
-
         q = self.key_proj(x)
-        scores = q @ self.memory.t() / math.sqrt(self.dim)
+        scores = torch.matmul(q, self.memory.t()) / math.sqrt(self.dim)
         attn = torch.softmax(scores, dim=-1)
-        read_val = attn @ self.memory
+        read_val = torch.matmul(attn, self.memory)
         return self.out_proj(read_val), attn
 
     @torch.no_grad()
     def write(self, x, attn):
-
         write_val = self.write_proj(x)
-        attn_flat = attn.reshape(-1, self.num_slots)
-        write_flat = write_val.reshape(-1, self.dim)
+        B, T, D = write_val.shape
+        S = self.num_slots
+
+        attn_flat = attn.reshape(B * T, S)
+        write_flat = write_val.reshape(B * T, D)
 
         usage = attn_flat.sum(dim=0).clamp(min=1e-6).unsqueeze(-1)
         update = (attn_flat.t() @ write_flat) / usage
@@ -125,17 +120,25 @@ class ExternalMemory(nn.Module):
 def wkv_recurrence(k, v, decay):
 
     B, T, H, Hd = k.shape
-    state = torch.zeros(B, H, Hd, device=k.device, dtype=k.dtype)
-    d = decay.view(1, H, 1)
-    outs = []
-    for t in range(T):
-        state = d * state + k[:, t] * v[:, t]
-        outs.append(state)
-    return torch.stack(outs, dim=1)
+    kv = k * v
+
+    d = decay.view(1, 1, H, 1)
+    t_idx = torch.arange(T, device=k.device, dtype=k.dtype).view(1, T, 1, 1)
+
+    d_pows_i = torch.pow(d, t_idx)
+
+    kv_scaled = kv / (d_pows_i + 1e-8)
+
+    cs = torch.cumsum(kv_scaled, dim=1)
+
+    d_pows_t = d_pows_i
+
+    state = cs * d_pows_t
+    return state
 
 
 class RWKVBlock(nn.Module):
-    def __init__(self, dim, heads=8, rank=32, ffn_mult=4, bias=False):
+    def __init__(self, dim, heads=8, rank=16, ffn_mult=4, bias=False):
         super().__init__()
         assert dim % heads == 0, "dim must be divisible by heads"
         self.dim = dim
@@ -191,14 +194,13 @@ class RWKVBlock(nn.Module):
 
     @torch.no_grad()
     def update_decay(self, k, v, lr=1e-3):
-
         hebb = torch.mean(k.detach() * v.detach(), dim=(0, 1, 3))
         self.log_decay += lr * hebb
 
 
 class RWKVLanguageModel(nn.Module):
-    def __init__(self, vocab_size, dim=512, n_layers=6, heads=8, rank=32,
-                 ffn_mult=4, num_mem_slots=512, max_seq_len=1024):
+    def __init__(self, vocab_size, dim=384, n_layers=6, heads=8, rank=16,
+                 ffn_mult=4, num_mem_slots=128, max_seq_len=1024):
         super().__init__()
         self.vocab_size = vocab_size
         self.dim = dim
@@ -243,12 +245,12 @@ class RWKVLanguageModel(nn.Module):
 
 MODEL_CONFIG = dict(
     vocab_size=50257,
-    dim=512,
+    dim=384,
     n_layers=6,
     heads=8,
-    rank=32,
+    rank=16,
     ffn_mult=4,
-    num_mem_slots=512,
+    num_mem_slots=128,
     max_seq_len=1024,
 )
 
