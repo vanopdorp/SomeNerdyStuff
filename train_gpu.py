@@ -151,7 +151,7 @@ class _nullcontext:
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--seq_len", type=int, default=512)
-    p.add_argument("--batch_size", type=int, default=12, help="per-GPU batch size")
+    p.add_argument("--batch_size", type=int, default=32, help="per-GPU batch size")
     p.add_argument("--grad_accum_steps", type=int, default=1)
     p.add_argument("--max_steps", type=int, default=20000)
     p.add_argument("--lr", type=float, default=3e-4)
