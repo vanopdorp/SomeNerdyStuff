@@ -2,6 +2,8 @@
 import argparse
 import os
 
+os.environ.pop("TPU_PROCESS_ADDRESSES", None)
+
 import numpy as np
 import torch
 import torch.nn.functional as F

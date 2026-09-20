@@ -119,7 +119,7 @@ class ExternalMemory(nn.Module):
         usage = attn_flat.sum(dim=0).clamp(min=1e-6).unsqueeze(-1)
         update = (attn_flat.t() @ write_flat) / usage
 
-        self.memory.mul_(self.decay).add_(update, alpha=self.write_lr)
+        self.memory = self.decay * self.memory + self.write_lr * update
 
 
 def wkv_recurrence(k, v, decay):
