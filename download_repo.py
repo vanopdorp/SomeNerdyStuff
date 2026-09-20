@@ -67,6 +67,19 @@ def detect_accelerator():
     return "cpu"
 
 
+def is_notebook():
+    try:
+        return get_ipython().__class__.__name__ == "ZMQInteractiveShell"
+    except NameError:
+        return False
+
+
+def run_in_process(extra_args):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import train_cpu
+    return train_cpu.main(extra_args)
+
+
 def main():
     extra_args = sys.argv[1:]
 
@@ -75,6 +88,13 @@ def main():
 
     accel = detect_accelerator()
     print(f"[download_repo] detected accelerator: {accel}")
+
+    if is_notebook():
+        print(
+            "[download_repo] interactive notebook detected; running "
+            "single-process training in-process (works on CPU and GPU)."
+        )
+        return run_in_process(extra_args)
 
     if accel == "tpu":
         if not torch_xla_installed():
@@ -96,12 +116,10 @@ def main():
 
     else:
         print(
-            "[download_repo] no TPU or GPU detected on this machine.\n"
-            "[download_repo] train_tpu.py/train_gpu.py both assume an "
-            "accelerator; exiting.",
-            file=sys.stderr,
+            "[download_repo] no TPU or GPU detected; running single-process "
+            "CPU training in-process."
         )
-        sys.exit(1)
+        return run_in_process(extra_args)
 
 
 if __name__ == "__main__":
