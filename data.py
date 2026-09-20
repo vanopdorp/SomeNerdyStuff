@@ -9,7 +9,6 @@ def build_token_blocks(block_size, split, cache_dir=None):
     ds = load_dataset(
         "Salesforce/wikitext",
         "wikitext-103-raw-v1",
-        cache_dir=cache_dir
     )
 
     ds = ds[split]
