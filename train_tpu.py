@@ -3,6 +3,8 @@ import argparse
 import os
 
 os.environ.pop("TPU_PROCESS_ADDRESSES", None)
+os.environ.pop("CLOUD_TPU_TASK_ID", None)
+os.environ.setdefault("TPU_WORKER_ID", "0")
 
 import numpy as np
 import torch
@@ -228,11 +230,18 @@ def main_notebook(argv=None):
         )
         return run_single(args)
     import torch_xla.distributed.xla_multiprocessing as xmp
+    os.environ.pop("TPU_PROCESS_ADDRESSES", None)
+    os.environ.pop("CLOUD_TPU_TASK_ID", None)
+    os.environ.setdefault("TPU_WORKER_ID", "0")
     xmp.spawn(_mp_fn, args=(args,), start_method="fork")
 
 
 if __name__ == "__main__":
     args = parse_args()
+
+    os.environ.pop("TPU_PROCESS_ADDRESSES", None)
+    os.environ.pop("CLOUD_TPU_TASK_ID", None)
+    os.environ.setdefault("TPU_WORKER_ID", "0")
 
     try:
         import torch_xla
