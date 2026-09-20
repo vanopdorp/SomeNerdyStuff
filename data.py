@@ -14,7 +14,6 @@ def build_token_blocks(block_size, split, cache_dir=None):
         "Salesforce/wikitext",
         "wikitext-103-raw-v1",
         split=split,
-        cache_dir=cache_dir
     )
 
     enc = tiktoken.get_encoding("gpt2")
