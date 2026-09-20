@@ -1,5 +1,6 @@
 
 import glob
+import os
 import shutil
 import subprocess
 import sys
@@ -80,14 +81,21 @@ def is_notebook():
         return False
 
 
+def _ensure_repo_on_path():
+    base = os.getcwd()
+    for d in (base, os.path.join(base, REPO_DIR)):
+        if d not in sys.path:
+            sys.path.insert(0, d)
+
+
 def run_in_process(extra_args):
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    _ensure_repo_on_path()
     import train_cpu
     return train_cpu.main(extra_args)
 
 
 def run_tpu_notebook(extra_args):
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    _ensure_repo_on_path()
     import train_tpu
     return train_tpu.main_notebook(extra_args)
 
