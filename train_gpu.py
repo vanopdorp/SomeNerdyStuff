@@ -10,7 +10,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from model import RWKVLanguageModel, MODEL_CONFIG
 from data import build_token_blocks, BlockDataset
-
+import math
 
 def setup_distributed():
     dist.init_process_group(backend="nccl")
@@ -39,6 +39,15 @@ def evaluate(model, val_loader, device, max_batches=20):
     if not losses:
         return float("nan")
     return sum(losses) / len(losses)
+def build_scheduler(optimizer, warmup_steps, max_steps, base_lr):
+    def lr_lambda(step):
+        if step < warmup_steps:
+            return float(step) / float(max_steps)
+        progress = float(step - warmup_steps) / float(max_steps - warmup_steps)
+        cosine = 0.5 * (1 + math.cos(math.pi * progress))
+        return cosine
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
 
 def main(args):
@@ -80,9 +89,9 @@ def main(args):
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.1,
     )
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=args.max_steps, eta_min=args.lr * 0.1,
-    )
+    warmup_steps = 1000
+    scheduler = build_scheduler(optimizer, warmup_steps, args.max_steps, args.lr)
+
     scaler = torch.cuda.amp.GradScaler()
 
     model.train()
