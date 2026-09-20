@@ -30,7 +30,13 @@ def install_requirements():
 
 
 def has_tpu():
-    return len(glob.glob("/dev/accel*")) > 0
+    if len(glob.glob("/dev/accel*")) > 0:
+        return True
+    try:
+        import torch_xla.core.xla_model as xm
+        return len(xm.get_xla_supported_devices()) > 0
+    except Exception:
+        return False
 
 
 def has_gpu():
@@ -80,16 +86,28 @@ def run_in_process(extra_args):
     return train_cpu.main(extra_args)
 
 
+def run_tpu_notebook(extra_args):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import train_tpu
+    return train_tpu.main_notebook(extra_args)
+
+
 def main():
     extra_args = sys.argv[1:]
 
     clone_or_pull_repo()
-    install_requirements()
-
     accel = detect_accelerator()
     print(f"[download_repo] detected accelerator: {accel}")
 
+    install_requirements()
+
     if is_notebook():
+        if accel == "tpu":
+            print(
+                "[download_repo] TPU notebook detected; launching torch_xla "
+                "training in-process (8 TPU cores, fork start method)."
+            )
+            return run_tpu_notebook(extra_args)
         print(
             "[download_repo] interactive notebook detected; running "
             "single-process training in-process (works on CPU and GPU)."

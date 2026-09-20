@@ -114,7 +114,7 @@ def _mp_fn(index, args):
                 break
 
 
-def parse_args():
+def parse_args(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument("--seq_len", type=int, default=512)
     p.add_argument("--batch_size", type=int, default=16, help="per-core batch size")
@@ -127,7 +127,13 @@ def parse_args():
     p.add_argument("--cache_dir", type=str, default=None)
     p.add_argument("--output_path", type=str, default="checkpoints/rwkv_bio_50m.pt")
     p.add_argument("-f", type=str, default="")
-    return p.parse_args()
+    return p.parse_args(argv)
+
+
+def main_notebook(argv=None):
+    args = parse_args(argv)
+    import torch_xla.distributed.xla_multiprocessing as xmp
+    xmp.spawn(_mp_fn, args=(args,), start_method="fork")
 
 
 if __name__ == "__main__":
