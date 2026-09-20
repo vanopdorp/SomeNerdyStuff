@@ -25,10 +25,6 @@ def clone_or_pull_repo():
         run(["git", "clone", REPO_URL, REPO_DIR])
 
 
-def install_requirements():
-    print("[download_repo] installing requirements.txt...")
-    run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"], cwd=REPO_DIR)
-
 
 def has_tpu():
     if len(glob.glob("/dev/accel*")) > 0:
@@ -120,7 +116,6 @@ def main():
     accel = detect_accelerator()
     print(f"[download_repo] detected accelerator: {accel}")
 
-    install_requirements()
 
     if is_notebook():
         if accel == "tpu":
