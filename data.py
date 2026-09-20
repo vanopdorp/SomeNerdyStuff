@@ -10,7 +10,7 @@ def build_token_blocks(block_size, split, cache_dir=None):
     from datasets import load_dataset
     import tiktoken
 
-    ds = load_dataset("wikitext", "wikitext-103-raw-v1", split=split, cache_dir=cache_dir)
+    ds = load_dataset("Salesforce/wikitext", "wikitext-103-raw-v1", split=split, cache_dir=cache_dir)
     enc = tiktoken.get_encoding("gpt2")
     eot = enc.eot_token
 
