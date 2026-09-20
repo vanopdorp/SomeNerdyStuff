@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO_URL = "https://github.com/your-org/your-repo.git"
+REPO_URL = "https://github.com/vanopdorp/SomeNerdyStuff.git"
 REPO_DIR = "rwkv_bio"
 
 
