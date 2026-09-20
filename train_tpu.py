@@ -1,6 +1,5 @@
 import argparse
 import os
-
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -14,7 +13,7 @@ import torch_xla.core.xla_model as xm
 def parse_args(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument("--seq_len", type=int, default=512)
-    p.add_argument("--batch_size", type=int, default=16, help="per-core batch size")
+    p.add_argument("--batch_size", type=int, default=16)
     p.add_argument("--max_steps", type=int, default=20000)
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--grad_clip", type=float, default=1.0)
@@ -22,7 +21,7 @@ def parse_args(argv=None):
     p.add_argument("--eval_every", type=int, default=500)
     p.add_argument("--ckpt_every", type=int, default=1000)
     p.add_argument("--cache_dir", type=str, default=None)
-    p.add_argument("--output_path", type=str, default="checkpoints/rwkv_bio_50m_tpu.pt")
+    p.add_argument("--output_path", type=str, default="checkpoints/rwkv_bio_tpu.pt")
     p.add_argument("-f", type=str, default="")
     return p.parse_args(argv)
 
