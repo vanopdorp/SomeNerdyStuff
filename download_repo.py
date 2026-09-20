@@ -33,10 +33,23 @@ def install_requirements():
 def has_tpu():
     if len(glob.glob("/dev/accel*")) > 0:
         return True
+    probe = (
+        "try:\n"
+        "    import torch_xla.core.xla_model as xm\n"
+        "    print(len(xm.get_xla_supported_devices()))\n"
+        "except Exception:\n"
+        "    pass\n"
+    )
     try:
-        import torch_xla.core.xla_model as xm
-        return len(xm.get_xla_supported_devices()) > 0
-    except Exception:
+        result = subprocess.run(
+            [sys.executable, "-c", probe],
+            capture_output=True, text=True, timeout=180,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    try:
+        return int(result.stdout.strip()) > 0
+    except ValueError:
         return False
 
 
