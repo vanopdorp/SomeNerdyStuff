@@ -89,18 +89,24 @@ def main(args):
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.1,
     )
-    warmup_steps = 1000
-    scheduler = build_scheduler(optimizer, warmup_steps, args.max_steps, args.lr)
+    steps_per_epoch = len(train_loader)
+    total_steps = args.epochs * steps_per_epoch
+    if is_main(rank):
+        print(f"steps_per_epoch={steps_per_epoch} epochs={args.epochs} "
+              f"total_steps={total_steps}")
+    warmup_steps = min(1000, total_steps // 2)
+    scheduler = build_scheduler(optimizer, warmup_steps, total_steps, args.lr)
 
     scaler = torch.cuda.amp.GradScaler()
 
     model.train()
     step = 0
+    epoch = 0
     running_loss = 0.0
     optimizer.zero_grad(set_to_none=True)
 
-    while step < args.max_steps:
-        train_sampler.set_epoch(step)
+    while step < total_steps and epoch < args.epochs:
+        train_sampler.set_epoch(epoch)
         for i, (x, y) in enumerate(train_loader):
             x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
 
@@ -139,18 +145,22 @@ def main(args):
                       f"lr {scheduler.get_last_lr()[0]:.2e}")
                 running_loss = 0.0
 
-            if (step % args.eval_every == 0 or step == args.max_steps) and is_main(rank):
+            if (step % args.eval_every == 0 or step >= total_steps) and is_main(rank):
                 val_loss = evaluate(model, val_loader, device)
                 ppl = float(np.exp(val_loss)) if val_loss == val_loss else float("nan")
                 print(f"step {step:6d} | val_loss {val_loss:.4f} | val_ppl {ppl:.2f}")
 
-            if (step % args.ckpt_every == 0 or step == args.max_steps) and is_main(rank):
+            if (step % args.ckpt_every == 0 or step >= total_steps) and is_main(rank):
                 os.makedirs(os.path.dirname(args.output_path) or ".", exist_ok=True)
                 torch.save(model.module.state_dict(), args.output_path)
                 print(f"saved checkpoint -> {args.output_path}")
 
-            if step >= args.max_steps:
+            if step >= total_steps:
                 break
+
+        if is_main(rank):
+            print(f"completed epoch {epoch + 1}/{args.epochs} (step {step}/{total_steps})")
+        epoch += 1
 
     dist.barrier()
     dist.destroy_process_group()
@@ -169,7 +179,8 @@ def parse_args():
     p.add_argument("--seq_len", type=int, default=1024)
     p.add_argument("--batch_size", type=int, default=64, help="per-GPU batch size")
     p.add_argument("--grad_accum_steps", type=int, default=1)
-    p.add_argument("--max_steps", type=int, default=20000)
+    p.add_argument("--epochs", type=int, default=3,
+                   help="number of full passes over the train set")
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--grad_clip", type=float, default=1.0)
     p.add_argument("--log_every", type=int, default=50)
