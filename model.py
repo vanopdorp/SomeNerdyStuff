@@ -276,8 +276,8 @@ class RWKVLanguageModel(nn.Module):
 
 MODEL_CONFIG = dict(
     vocab_size=50257,
-    dim=572,
-    n_layers=11,
+    dim=768,
+    n_layers=12,
     heads=12,
     rank=32,
     ffn_mult=4,
