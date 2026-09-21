@@ -11,6 +11,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from model import RWKVLanguageModel, MODEL_CONFIG
 from data import build_token_blocks, BlockDataset
 import math
+import time
 
 def setup_distributed():
     dist.init_process_group(backend="nccl")
@@ -39,13 +40,17 @@ def evaluate(model, val_loader, device, max_batches=20):
     if not losses:
         return float("nan")
     return sum(losses) / len(losses)
-def build_scheduler(optimizer, warmup_steps, max_steps, base_lr):
+def build_scheduler(optimizer, warmup_steps, max_steps, base_lr,
+                    eta_ratio=0.1):
+    eta_min = eta_ratio * base_lr
+
     def lr_lambda(step):
-        if step < warmup_steps:
-            return float(step) / float(max_steps)
-        progress = float(step - warmup_steps) / float(max_steps - warmup_steps)
+        if warmup_steps > 0 and step < warmup_steps:
+            return (step + 1) / warmup_steps
+        progress = (step - warmup_steps) / max(max_steps - warmup_steps, 1)
+        progress = min(progress, 1.0)
         cosine = 0.5 * (1 + math.cos(math.pi * progress))
-        return cosine
+        return (1 - eta_ratio) * cosine + eta_ratio
 
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
@@ -93,8 +98,12 @@ def main(args):
     total_steps = args.epochs * steps_per_epoch
     if is_main(rank):
         print(f"steps_per_epoch={steps_per_epoch} epochs={args.epochs} "
-              f"total_steps={total_steps}")
-    warmup_steps = min(1000, total_steps // 2)
+              f"total_steps={total_steps} "
+              f"(world={world_size} x batch={args.batch_size})")
+        if total_steps <= args.log_every:
+            print("WARNING: fewer steps than --log_every; adjust batch size "
+                  "or epochs")
+    warmup_steps = min(1000, max(total_steps // 2, 1))
     scheduler = build_scheduler(optimizer, warmup_steps, total_steps, args.lr)
 
     scaler = torch.cuda.amp.GradScaler()
@@ -104,6 +113,7 @@ def main(args):
     epoch = 0
     running_loss = 0.0
     optimizer.zero_grad(set_to_none=True)
+    wall_t0 = time.time()
 
     while step < total_steps and epoch < args.epochs:
         train_sampler.set_epoch(epoch)
@@ -141,9 +151,15 @@ def main(args):
 
             if step % args.log_every == 0 and is_main(rank):
                 avg = running_loss / (args.log_every * args.grad_accum_steps)
-                print(f"step {step:6d} | train_loss {avg:.4f} | "
-                      f"lr {scheduler.get_last_lr()[0]:.2e}")
+                dt = time.time() - wall_t0
+                sps = args.log_every / max(dt, 1e-6)
+                eta_min = max(total_steps - step, 0)
+                eta_s = eta_min / sps
+                print(f"step {step:6d}/{total_steps} | train_loss {avg:.4f} | "
+                      f"lr {scheduler.get_last_lr()[0]:.2e} | "
+                      f"{sps:.1f} steps/s | ETA {eta_s/60:.1f} min")
                 running_loss = 0.0
+                wall_t0 = time.time()
 
             if (step % args.eval_every == 0 or step >= total_steps) and is_main(rank):
                 val_loss = evaluate(model, val_loader, device)
@@ -163,6 +179,9 @@ def main(args):
         epoch += 1
 
     dist.barrier()
+    if is_main(rank):
+        print(f"finished {args.epochs} epochs -> {step} steps done, "
+              f"checkpoint at {args.output_path}")
     dist.destroy_process_group()
 
 

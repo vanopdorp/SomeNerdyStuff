@@ -47,8 +47,12 @@ def train(args):
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.1,
     )
+    steps_per_epoch = len(train_loader)
+    total_steps = args.epochs * steps_per_epoch
+    print(f"steps_per_epoch={steps_per_epoch} epochs={args.epochs} "
+          f"total_steps={total_steps}")
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=args.max_steps, eta_min=args.lr * 0.1,
+        optimizer, T_max=total_steps, eta_min=args.lr * 0.1,
     )
 
     use_amp = args.amp and device.type == "cuda"
@@ -77,14 +81,20 @@ def train(args):
 
     model.train()
     step = 0
+    epoch = 0
     running_loss = 0.0
-    while step < args.max_steps:
+    while step < total_steps and epoch < args.epochs:
         for x, y in train_loader:
             x, y = x.to(device), y.to(device)
 
             with autocast_ctx():
                 logits = model(x)
                 loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), y.reshape(-1))
+
+            if not torch.isfinite(loss):
+                print(f"step {step:6d} | skipping non-finite loss batch")
+                optimizer.zero_grad(set_to_none=True)
+                continue
 
             if scaler is not None:
                 scaler.scale(loss).backward()
@@ -110,18 +120,21 @@ def train(args):
                       f"lr {scheduler.get_last_lr()[0]:.2e}")
                 running_loss = 0.0
 
-            if step % args.eval_every == 0 or step == args.max_steps:
+            if step % args.eval_every == 0 or step >= total_steps:
                 val_loss = evaluate()
                 ppl = float(np.exp(val_loss)) if val_loss == val_loss else float("nan")
                 print(f"step {step:6d} | val_loss {val_loss:.4f} | val_ppl {ppl:.2f}")
 
-            if step % args.ckpt_every == 0 or step == args.max_steps:
+            if step % args.ckpt_every == 0 or step >= total_steps:
                 os.makedirs(os.path.dirname(args.output_path) or ".", exist_ok=True)
                 torch.save(model.state_dict(), args.output_path)
                 print(f"saved checkpoint -> {args.output_path}")
 
-            if step >= args.max_steps:
+            if step >= total_steps:
                 break
+
+        print(f"completed epoch {epoch + 1}/{args.epochs} (step {step}/{total_steps})")
+        epoch += 1
 
 
 def parse_args(argv=None):
@@ -131,7 +144,8 @@ def parse_args(argv=None):
     p.add_argument("--num_workers", type=int, default=2)
     p.add_argument("--device", type=str, default=None, help="cuda/cpu; default: auto")
     p.add_argument("--amp", action="store_true", help="enable fp16 autocast on CUDA")
-    p.add_argument("--max_steps", type=int, default=1000)
+    p.add_argument("--epochs", type=int, default=3,
+                   help="number of full passes over the train set")
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--grad_clip", type=float, default=1.0)
     p.add_argument("--log_every", type=int, default=10)
