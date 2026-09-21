@@ -200,7 +200,7 @@ def parse_args():
     p.add_argument("--grad_accum_steps", type=int, default=1)
     p.add_argument("--epochs", type=int, default=3,
                    help="number of full passes over the train set")
-    p.add_argument("--lr", type=float, default=3e-4)
+    p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--grad_clip", type=float, default=1.0)
     p.add_argument("--log_every", type=int, default=50)
     p.add_argument("--eval_every", type=int, default=500)

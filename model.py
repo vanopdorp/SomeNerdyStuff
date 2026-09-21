@@ -276,12 +276,12 @@ class RWKVLanguageModel(nn.Module):
 
 MODEL_CONFIG = dict(
     vocab_size=50257,
-    dim=384,
+    dim=572,
     n_layers=6,
-    heads=8,
-    rank=16,
+    heads=12,
+    rank=32,
     ffn_mult=4,
-    num_mem_slots=128,
+    num_mem_slots=512,
     max_seq_len=1024,
 )
 
