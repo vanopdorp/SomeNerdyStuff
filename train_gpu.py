@@ -50,7 +50,7 @@ def build_scheduler(optimizer, warmup_steps, max_steps, base_lr,
         progress = (step - warmup_steps) / max(max_steps - warmup_steps, 1)
         progress = min(progress, 1.0)
         cosine = 0.5 * (1 + math.cos(math.pi * progress))
-        return (1 - eta_ratio) * cosine + eta_ratio
+        return (1 - eta_ratio) * cosine + eta_ratio / 3
 
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 

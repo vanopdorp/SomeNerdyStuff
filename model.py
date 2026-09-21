@@ -15,11 +15,7 @@ def calculate_error(x, y, eps=1e-8):
 
 
 class BioLayer(nn.Module):
-    """
-    Bio-inspired linear layer with low-rank adaptation and local update.
-    Forward is standard matmul; local_update is no-grad and can be called
-    outside the main training loop if desired.
-    """
+
 
     def __init__(self, in_dim, out_dim, rank=16, mix_factor=0.05,
                  smoothing_factor=0.1, bias=True):
@@ -93,9 +89,7 @@ class BioLayer(nn.Module):
 
 
 class ExternalMemory(nn.Module):
-    """
-    Vectorized external memory with read/write.
-    """
+
 
     def __init__(self, dim, num_slots=128, write_lr=0.1, decay=0.995,
                  max_norm=30.0):
@@ -114,25 +108,23 @@ class ExternalMemory(nn.Module):
         self.out_proj = nn.Linear(dim, dim, bias=False)
 
     def read(self, x):
-        # x: [B, T, D]
-        q = self.key_proj(x)  # [B, T, D]
-        scores = torch.matmul(q, self.memory.t()) / math.sqrt(self.dim)  # [B, T, S]
+        q = self.key_proj(x)
+        scores = torch.matmul(q, self.memory.t()) / math.sqrt(self.dim)
         attn = torch.softmax(scores, dim=-1)
-        read_val = torch.matmul(attn, self.memory)  # [B, T, D]
+        read_val = torch.matmul(attn, self.memory)
         return self.out_proj(read_val), attn
 
     @torch.no_grad()
     def write(self, x, attn):
-        # x: [B, T, D], attn: [B, T, S]
-        write_val = self.write_proj(x)  # [B, T, D]
+        write_val = self.write_proj(x)
         B, T, D = write_val.shape
         S = self.num_slots
 
-        attn_flat = attn.reshape(B * T, S)      # [BT, S]
-        write_flat = write_val.reshape(B * T, D)  # [BT, D]
+        attn_flat = attn.reshape(B * T, S)
+        write_flat = write_val.reshape(B * T, D)
 
-        usage = attn_flat.sum(dim=0).clamp(min=1e-6).unsqueeze(-1)  # [S, 1]
-        update = (attn_flat.t() @ write_flat) / usage  # [S, D]
+        usage = attn_flat.sum(dim=0).clamp(min=1e-6).unsqueeze(-1)
+        update = (attn_flat.t() @ write_flat) / usage
 
         mem = self.decay * self.memory + self.write_lr * update
         slot_norm = mem.norm(dim=1, keepdim=True)
@@ -140,30 +132,25 @@ class ExternalMemory(nn.Module):
 
 
 def wkv_recurrence(k, v, decay):
-    """
-    Vectorized RWKV-style recurrence:
-    state_t = sum_{i<=t} decay^{t-i} * k_i * v_i
-    k, v: [B, T, H, Hd]
-    decay: [H]
-    """
+
     orig_dtype = k.dtype
     k = k.float()
     v = v.float()
     decay = decay.float()
 
     B, T, H, Hd = k.shape
-    kv = k * v  # [B, T, H, Hd]
+    kv = k * v
 
-    d = decay.view(1, 1, H, 1)  # [1, 1, H, 1]
-    t_idx = torch.arange(T, device=k.device, dtype=k.dtype).view(1, T, 1, 1)  # [1, T, 1, 1]
+    d = decay.view(1, 1, H, 1)
+    t_idx = torch.arange(T, device=k.device, dtype=k.dtype).view(1, T, 1, 1)
 
-    d_pows_i = torch.pow(d, t_idx)  # [1, T, H, 1]
-    kv_scaled = kv / (d_pows_i + 1e-8)  # [B, T, H, Hd]
+    d_pows_i = torch.pow(d, t_idx)
+    kv_scaled = kv / (d_pows_i + 1e-8)
 
-    cs = torch.cumsum(kv_scaled, dim=1)  # [B, T, H, Hd]
-    d_pows_t = d_pows_i  # [1, T, H, 1]
+    cs = torch.cumsum(kv_scaled, dim=1)
+    d_pows_t = d_pows_i
 
-    state = cs * d_pows_t  # [B, T, H, Hd]
+    state = cs * d_pows_t
     return state.to(orig_dtype)
 
 
@@ -203,8 +190,8 @@ class RWKVBlock(nn.Module):
         k_h = k.view(B, T, H, Hd)
         v_h = v.view(B, T, H, Hd)
 
-        decay = torch.exp(-F.softplus(self.log_decay))  # [H]
-        wkv = wkv_recurrence(k_h, v_h, decay)  # [B, T, H, Hd]
+        decay = torch.exp(-F.softplus(self.log_decay))
+        wkv = wkv_recurrence(k_h, v_h, decay)
 
         y = r * wkv
         y = y.reshape(B, T, D)
@@ -224,9 +211,9 @@ class RWKVBlock(nn.Module):
 
     @torch.no_grad()
     def update_decay(self, k, v, lr=1e-3):
-        hebb = torch.mean(k.detach() * v.detach(), dim=(0, 1, 3))  # [H]
+        hebb = torch.mean(k.detach() * v.detach(), dim=(0, 1, 3))
         self.log_decay += lr * hebb
-        self.log_decay.clamp_(-2.0, 6.0)  # decay in [~0.002, ~0.88]
+        self.log_decay.clamp_(-2.0, 6.0)
 
 
 class RWKVLanguageModel(nn.Module):
@@ -254,7 +241,7 @@ class RWKVLanguageModel(nn.Module):
             nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def forward(self, idx):
-        x = self.embed(idx)  # [B, T, D]
+        x = self.embed(idx)
 
         mem_read, attn = self.memory.read(x)
         x = x + mem_read
