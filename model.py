@@ -97,12 +97,14 @@ class ExternalMemory(nn.Module):
     Vectorized external memory with read/write.
     """
 
-    def __init__(self, dim, num_slots=128, write_lr=0.1, decay=0.995):
+    def __init__(self, dim, num_slots=128, write_lr=0.1, decay=0.995,
+                 max_norm=30.0):
         super().__init__()
         self.dim = dim
         self.num_slots = num_slots
         self.write_lr = write_lr
         self.decay = decay
+        self.max_norm = max_norm
 
         memory_init = torch.randn(num_slots, dim) * 0.02
         self.register_buffer("memory", memory_init)
@@ -132,7 +134,9 @@ class ExternalMemory(nn.Module):
         usage = attn_flat.sum(dim=0).clamp(min=1e-6).unsqueeze(-1)  # [S, 1]
         update = (attn_flat.t() @ write_flat) / usage  # [S, D]
 
-        self.memory = self.decay * self.memory + self.write_lr * update
+        mem = self.decay * self.memory + self.write_lr * update
+        slot_norm = mem.norm(dim=1, keepdim=True)
+        self.memory = mem * (self.max_norm / slot_norm.clamp(min=self.max_norm))
 
 
 def wkv_recurrence(k, v, decay):
@@ -142,6 +146,11 @@ def wkv_recurrence(k, v, decay):
     k, v: [B, T, H, Hd]
     decay: [H]
     """
+    orig_dtype = k.dtype
+    k = k.float()
+    v = v.float()
+    decay = decay.float()
+
     B, T, H, Hd = k.shape
     kv = k * v  # [B, T, H, Hd]
 
@@ -155,7 +164,7 @@ def wkv_recurrence(k, v, decay):
     d_pows_t = d_pows_i  # [1, T, H, 1]
 
     state = cs * d_pows_t  # [B, T, H, Hd]
-    return state
+    return state.to(orig_dtype)
 
 
 class RWKVBlock(nn.Module):
@@ -217,6 +226,7 @@ class RWKVBlock(nn.Module):
     def update_decay(self, k, v, lr=1e-3):
         hebb = torch.mean(k.detach() * v.detach(), dim=(0, 1, 3))  # [H]
         self.log_decay += lr * hebb
+        self.log_decay.clamp_(-2.0, 6.0)  # decay in [~0.002, ~0.88]
 
 
 class RWKVLanguageModel(nn.Module):

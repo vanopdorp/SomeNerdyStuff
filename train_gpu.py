@@ -111,7 +111,14 @@ def main(args):
                     logits = model(x)
                     loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), y.reshape(-1))
                     loss = loss / args.grad_accum_steps
-                scaler.scale(loss).backward()
+
+            if not torch.isfinite(loss):
+                if is_main(rank):
+                    print(f"step {step:6d} | skipping non-finite loss batch")
+                optimizer.zero_grad(set_to_none=True)
+                continue
+
+            scaler.scale(loss).backward()
 
             running_loss += loss.item() * args.grad_accum_steps
 
